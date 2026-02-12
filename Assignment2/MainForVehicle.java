@@ -15,7 +15,7 @@ public class MainForVehicle{
         garage[0] = v;
         garage[1] = v1; garage[2] = v2;
         System.out.println("Vehicle Details:");
-        System.out.println("Brand        Model      Year   Color      Fuel   Seats    Price           Mileage    MfgCode         Services");
+        System.out.println("Brand        Model    Price           Mileage");
         for(int i = 0; i < garage.length; i++) {
             if(garage[i].fuelType == 'D') {
                 float m = garage[i].calcMileage(50, 500);
@@ -39,7 +39,7 @@ public class MainForVehicle{
     }
     
     public static void printTabular(Vehicle v, float m) {
-        String format = "%-12s %-10s %-6d %-10s %-6c %-8d %-15.2f %-10.1f %-15s %-10d%n";
-        System.out.printf(format, v.brand, v.model, v.yearofMfg.getValue(), v.color, v.fuelType, v.seats, v.price, m, (v.getMfgCode() == null ? "null" : v.getMfgCode()), v.getNoOfServices());
+        String format = "%-12s %-10s %-15.2f %-10.1f%n";
+        System.out.printf(format, v.brand, v.model, v.price, m);
     }
 }
