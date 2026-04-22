@@ -9,25 +9,29 @@ import javafx.scene.layout.*;
 import javafx.stage.Stage;
 
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
 
 public class JavaFXApplication extends Application {
 
-    // Database constants
-    static final String URL = "jdbc:mysql://localhost:3306/college_db?useSSL=false&serverTimezone=UTC";
+    static final String URL = "jdbc:mysql://localhost:3306/mydb?useSSL=false&serverTimezone=UTC&createDatabaseIfNotExist=true";
     static final String USER = "root";
     static final String PASS = "Password";
 
-    // UI Components
-    private TextField rollField = new TextField();
-    private TextField nameField = new TextField();
-    private TextField branchField = new TextField();
-    private TextField marksField = new TextField();
-    private TableView<Student> tableView = new TableView<>();
+    // Restaurant UI
+    private ComboBox<String> restMenuBox = new ComboBox<>();
+    private TextField rIdField = new TextField();
+    private TextField rNameField = new TextField();
+    private TextField rAddressField = new TextField();
+    private TableView<Restaurant> restTable = new TableView<>();
+    private ObservableList<Restaurant> restList = FXCollections.observableArrayList();
 
-    // Data
-    private ObservableList<Student> studentList = FXCollections.observableArrayList();
+    // MenuItem UI
+    private ComboBox<String> itemMenuBox = new ComboBox<>();
+    private TextField mIdField = new TextField();
+    private TextField mNameField = new TextField();
+    private TextField mPriceField = new TextField();
+    private TextField mResIdField = new TextField();
+    private TableView<MenuItem> menuTable = new TableView<>();
+    private ObservableList<MenuItem> menuList = FXCollections.observableArrayList();
 
     public static void main(String[] args) {
         launch(args);
@@ -35,178 +39,298 @@ public class JavaFXApplication extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        primaryStage.setTitle("Student Database Management (JavaFX)");
+        initDatabase();
 
-        // 1. Database Initialization
-        createTable();
+        TabPane tabPane = new TabPane();
+        
+        Tab restTab = new Tab("Restaurants", createRestaurantPane());
+        restTab.setClosable(false);
+        
+        Tab menuTab = new Tab("Menu Items", createMenuItemPane());
+        menuTab.setClosable(false);
+        
+        tabPane.getTabs().addAll(restTab, menuTab);
 
-        // 2. Input Form (GridPane)
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20));
-
-        grid.add(new Label("Roll No:"), 0, 0);
-        grid.add(rollField, 1, 0);
-        grid.add(new Label("Name:"), 0, 1);
-        grid.add(nameField, 1, 1);
-        grid.add(new Label("Branch:"), 0, 2);
-        grid.add(branchField, 1, 2);
-        grid.add(new Label("Marks:"), 0, 3);
-        grid.add(marksField, 1, 3);
-
-        // 3. Buttons (HBox)
-        Button insertBtn = new Button("Insert");
-        Button updateBtn = new Button("Update");
-        Button deleteBtn = new Button("Delete");
-        Button refreshBtn = new Button("Refresh View");
-
-        HBox buttonBox = new HBox(10, insertBtn, updateBtn, deleteBtn, refreshBtn);
-        buttonBox.setPadding(new Insets(10));
-
-        // 4. Table Setup
-        setupTable();
-
-        // 5. Layout Assembly
-        VBox root = new VBox(10, grid, buttonBox, tableView);
-        root.setPadding(new Insets(10));
-
-        // 6. Button Handlers
-        insertBtn.setOnAction(e -> handleInsert());
-        updateBtn.setOnAction(e -> handleUpdate());
-        deleteBtn.setOnAction(e -> handleDelete());
-        refreshBtn.setOnAction(e -> loadData());
-
-        // Initial Data Load
-        loadData();
-
-        Scene scene = new Scene(root, 600, 500);
+        Scene scene = new Scene(tabPane, 750, 600);
         primaryStage.setScene(scene);
+        primaryStage.setTitle("Menu-Driven Database Application");
         primaryStage.show();
+
+        loadRestaurants();
+        loadMenuItems();
     }
 
-    private void setupTable() {
-        TableColumn<Student, Integer> rollCol = new TableColumn<>("Roll No");
-        rollCol.setCellValueFactory(data -> data.getValue().rollNoProperty().asObject());
+    private void initDatabase() {
+        String createRestSql = "CREATE TABLE IF NOT EXISTS Restaurant (" +
+                "Id INT PRIMARY KEY, " +
+                "Name VARCHAR(100), " +
+                "Address VARCHAR(200))";
+        
+        String createMenuSql = "CREATE TABLE IF NOT EXISTS MenuItem (" +
+                "Id INT PRIMARY KEY, " +
+                "Name VARCHAR(100), " +
+                "Price DOUBLE, " +
+                "ResId INT, " +
+                "FOREIGN KEY (ResId) REFERENCES Restaurant(Id) ON DELETE CASCADE)";
 
-        TableColumn<Student, String> nameCol = new TableColumn<>("Name");
-        nameCol.setCellValueFactory(data -> data.getValue().nameProperty());
-
-        TableColumn<Student, String> branchCol = new TableColumn<>("Branch");
-        branchCol.setCellValueFactory(data -> data.getValue().branchProperty());
-
-        TableColumn<Student, Double> marksCol = new TableColumn<>("Marks");
-        marksCol.setCellValueFactory(data -> data.getValue().marksProperty().asObject());
-
-        tableView.getColumns().add(rollCol);
-        tableView.getColumns().add(nameCol);
-        tableView.getColumns().add(branchCol);
-        tableView.getColumns().add(marksCol);
-        tableView.setItems(studentList);
-    }
-
-    // ─Database Operations ──────────────────────────────────────────────────
-
-    private Connection getConnection() throws SQLException {
-        return DriverManager.getConnection(URL, USER, PASS);
-    }
-
-    private void createTable() {
-        String sql = "CREATE TABLE IF NOT EXISTS students ("
-                + "roll_no INT PRIMARY KEY, "
-                + "name VARCHAR(50), "
-                + "branch VARCHAR(30), "
-                + "marks DOUBLE)";
-        try (Connection con = getConnection(); Statement st = con.createStatement()) {
-            st.executeUpdate(sql);
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             Statement st = con.createStatement()) {
+            st.executeUpdate(createRestSql);
+            st.executeUpdate(createMenuSql);
         } catch (SQLException e) {
-            showAlert("Error", "Could not create table: " + e.getMessage());
+            showAlert("Database Error", "Failed to initialize DB: " + e.getMessage());
         }
     }
 
-    private void handleInsert() {
+    // ──────────────────────── RESTAURANT UI & LOGIC ────────────────────────
+    private VBox createRestaurantPane() {
+        GridPane grid = new GridPane();
+        grid.setHgap(10); grid.setVgap(10); grid.setPadding(new Insets(10));
+        
+        // Menu-driven operation selector
+        restMenuBox.getItems().addAll("Insert", "Select", "Update", "Delete");
+        restMenuBox.setValue("Insert"); // default
+        
+        grid.add(new Label("Select Operation:"), 0, 0);
+        grid.add(restMenuBox, 1, 0);
+        
+        grid.add(new Label("Restaurant ID:"), 0, 1); grid.add(rIdField, 1, 1);
+        grid.add(new Label("Name:"), 0, 2);          grid.add(rNameField, 1, 2);
+        grid.add(new Label("Address:"), 0, 3);       grid.add(rAddressField, 1, 3);
+
+        Button btnExecute = new Button("Execute Operation");
+        btnExecute.setOnAction(e -> executeRestaurantOperation());
+
+        TableColumn<Restaurant, Integer> colId = new TableColumn<>("ID");
+        colId.setCellValueFactory(d -> d.getValue().idProperty().asObject());
+        TableColumn<Restaurant, String> colName = new TableColumn<>("Name");
+        colName.setCellValueFactory(d -> d.getValue().nameProperty());
+        TableColumn<Restaurant, String> colAddress = new TableColumn<>("Address");
+        colAddress.setCellValueFactory(d -> d.getValue().addressProperty());
+
+        restTable.getColumns().addAll(colId, colName, colAddress);
+        restTable.setItems(restList);
+
+        VBox pane = new VBox(15, new Label("Restaurant Operations Menu"), grid, btnExecute, restTable);
+        pane.setPadding(new Insets(15));
+        return pane;
+    }
+
+    private void executeRestaurantOperation() {
+        String operation = restMenuBox.getValue();
         try {
-            int roll = Integer.parseInt(rollField.getText());
-            String name = nameField.getText();
-            String branch = branchField.getText();
-            double marks = Double.parseDouble(marksField.getText());
-
-            String sql = "INSERT INTO students VALUES (?, ?, ?, ?)";
-            try (Connection con = getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
-                ps.setInt(1, roll);
-                ps.setString(2, name);
-                ps.setString(3, branch);
-                ps.setDouble(4, marks);
-                ps.executeUpdate();
-                loadData();
-                clearFields();
+            switch (operation) {
+                case "Insert": insertRestaurant(); break;
+                case "Select": selectRestaurant(); break;
+                case "Update": updateRestaurant(); break;
+                case "Delete": deleteRestaurant(); break;
             }
-        } catch (Exception e) {
-            showAlert("Error", "Insert failed: " + e.getMessage());
+        } catch (Exception ex) {
+            showAlert("Error", "Operation failed: " + ex.getMessage());
         }
     }
 
-    private void handleUpdate() {
+    private void insertRestaurant() throws SQLException {
+        String sql = "INSERT INTO Restaurant (Id, Name, Address) VALUES (?, ?, ?)";
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, Integer.parseInt(rIdField.getText()));
+            ps.setString(2, rNameField.getText());
+            ps.setString(3, rAddressField.getText());
+            ps.executeUpdate();
+            loadRestaurants();
+            clearRestFields();
+        }
+    }
+
+    private void selectRestaurant() throws SQLException {
+        // If ID is provided, search by ID. Otherwise load all.
+        if (rIdField.getText().isEmpty()) {
+            loadRestaurants();
+            return;
+        }
+        
+        restList.clear();
+        String sql = "SELECT * FROM Restaurant WHERE Id=?";
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, Integer.parseInt(rIdField.getText()));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    restList.add(new Restaurant(rs.getInt("Id"), rs.getString("Name"), rs.getString("Address")));
+                    rNameField.setText(rs.getString("Name"));
+                    rAddressField.setText(rs.getString("Address"));
+                } else {
+                    showAlert("Result", "No Restaurant found with ID " + rIdField.getText());
+                }
+            }
+        }
+    }
+
+    private void updateRestaurant() throws SQLException {
+        String sql = "UPDATE Restaurant SET Name=?, Address=? WHERE Id=?";
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, rNameField.getText());
+            ps.setString(2, rAddressField.getText());
+            ps.setInt(3, Integer.parseInt(rIdField.getText()));
+            int rows = ps.executeUpdate();
+            if (rows > 0) { loadRestaurants(); clearRestFields(); }
+            else showAlert("Warning", "Restaurant ID not found.");
+        }
+    }
+
+    private void deleteRestaurant() throws SQLException {
+        String sql = "DELETE FROM Restaurant WHERE Id=?";
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, Integer.parseInt(rIdField.getText()));
+            int rows = ps.executeUpdate();
+            if (rows > 0) { loadRestaurants(); clearRestFields(); loadMenuItems(); }
+            else showAlert("Warning", "Restaurant ID not found.");
+        }
+    }
+
+    private void loadRestaurants() {
+        restList.clear();
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery("SELECT * FROM Restaurant")) {
+            while(rs.next()) {
+                restList.add(new Restaurant(rs.getInt("Id"), rs.getString("Name"), rs.getString("Address")));
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+
+    private void clearRestFields() { rIdField.clear(); rNameField.clear(); rAddressField.clear(); }
+
+    // ──────────────────────── MENU ITEM UI & LOGIC ────────────────────────
+    private VBox createMenuItemPane() {
+        GridPane grid = new GridPane();
+        grid.setHgap(10); grid.setVgap(10); grid.setPadding(new Insets(10));
+        
+        // Menu-driven operation selector
+        itemMenuBox.getItems().addAll("Insert", "Select", "Update", "Delete");
+        itemMenuBox.setValue("Insert"); // default
+
+        grid.add(new Label("Select Operation:"), 0, 0);
+        grid.add(itemMenuBox, 1, 0);
+
+        grid.add(new Label("Item ID:"), 0, 1);       grid.add(mIdField, 1, 1);
+        grid.add(new Label("Item Name:"), 0, 2);     grid.add(mNameField, 1, 2);
+        grid.add(new Label("Price:"), 0, 3);         grid.add(mPriceField, 1, 3);
+        grid.add(new Label("Restaurant ID:"), 0, 4); grid.add(mResIdField, 1, 4);
+
+        Button btnExecute = new Button("Execute Operation");
+        btnExecute.setOnAction(e -> executeMenuItemOperation());
+
+        TableColumn<MenuItem, Integer> colId = new TableColumn<>("Item ID");
+        colId.setCellValueFactory(d -> d.getValue().idProperty().asObject());
+        TableColumn<MenuItem, String> colName = new TableColumn<>("Name");
+        colName.setCellValueFactory(d -> d.getValue().nameProperty());
+        TableColumn<MenuItem, Double> colPrice = new TableColumn<>("Price");
+        colPrice.setCellValueFactory(d -> d.getValue().priceProperty().asObject());
+        TableColumn<MenuItem, Integer> colRId = new TableColumn<>("Rest. ID");
+        colRId.setCellValueFactory(d -> d.getValue().resIdProperty().asObject());
+
+        menuTable.getColumns().addAll(colId, colName, colPrice, colRId);
+        menuTable.setItems(menuList);
+
+        VBox pane = new VBox(15, new Label("Menu Item Operations Menu"), grid, btnExecute, menuTable);
+        pane.setPadding(new Insets(15));
+        return pane;
+    }
+
+    private void executeMenuItemOperation() {
+        String operation = itemMenuBox.getValue();
         try {
-            int roll = Integer.parseInt(rollField.getText());
-            double marks = Double.parseDouble(marksField.getText());
-
-            String sql = "UPDATE students SET marks=? WHERE roll_no=?";
-            try (Connection con = getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
-                ps.setDouble(1, marks);
-                ps.setInt(2, roll);
-                int rows = ps.executeUpdate();
-                if (rows > 0)
-                    loadData();
-                else
-                    showAlert("Warning", "Roll No not found.");
+            switch (operation) {
+                case "Insert": insertMenuItem(); break;
+                case "Select": selectMenuItem(); break;
+                case "Update": updateMenuItem(); break;
+                case "Delete": deleteMenuItem(); break;
             }
-        } catch (Exception e) {
-            showAlert("Error", "Update failed: " + e.getMessage());
+        } catch (Exception ex) {
+            showAlert("Error", "Operation failed: " + ex.getMessage());
         }
     }
 
-    private void handleDelete() {
-        try {
-            int roll = Integer.parseInt(rollField.getText());
-            String sql = "DELETE FROM students WHERE roll_no=?";
-            try (Connection con = getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
-                ps.setInt(1, roll);
-                int rows = ps.executeUpdate();
-                if (rows > 0)
-                    loadData();
-                else
-                    showAlert("Warning", "Roll No not found.");
-            }
-        } catch (Exception e) {
-            showAlert("Error", "Delete failed: " + e.getMessage());
+    private void insertMenuItem() throws SQLException {
+        String sql = "INSERT INTO MenuItem (Id, Name, Price, ResId) VALUES (?, ?, ?, ?)";
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, Integer.parseInt(mIdField.getText()));
+            ps.setString(2, mNameField.getText());
+            ps.setDouble(3, Double.parseDouble(mPriceField.getText()));
+            ps.setInt(4, Integer.parseInt(mResIdField.getText()));
+            ps.executeUpdate();
+            loadMenuItems();
+            clearMenuFields();
         }
     }
 
-    private void loadData() {
-        studentList.clear();
-        String sql = "SELECT * FROM students ORDER BY roll_no";
-        try (Connection con = getConnection();
-                Statement st = con.createStatement();
-                ResultSet rs = st.executeQuery(sql)) {
-            while (rs.next()) {
-                studentList.add(new Student(
-                        rs.getInt("roll_no"),
-                        rs.getString("name"),
-                        rs.getString("branch"),
-                        rs.getDouble("marks")));
+    private void selectMenuItem() throws SQLException {
+        // If ID is provided, search by ID. Otherwise load all.
+        if (mIdField.getText().isEmpty()) {
+            loadMenuItems();
+            return;
+        }
+        
+        menuList.clear();
+        String sql = "SELECT * FROM MenuItem WHERE Id=?";
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, Integer.parseInt(mIdField.getText()));
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    menuList.add(new MenuItem(rs.getInt("Id"), rs.getString("Name"), rs.getDouble("Price"), rs.getInt("ResId")));
+                    mNameField.setText(rs.getString("Name"));
+                    mPriceField.setText(String.valueOf(rs.getDouble("Price")));
+                    mResIdField.setText(String.valueOf(rs.getInt("ResId")));
+                } else {
+                    showAlert("Result", "No Menu Item found with ID " + mIdField.getText());
+                }
             }
-        } catch (SQLException e) {
-            showAlert("Error", "Could not load data: " + e.getMessage());
         }
     }
 
-    private void clearFields() {
-        rollField.clear();
-        nameField.clear();
-        branchField.clear();
-        marksField.clear();
+    private void updateMenuItem() throws SQLException {
+        String sql = "UPDATE MenuItem SET Name=?, Price=?, ResId=? WHERE Id=?";
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, mNameField.getText());
+            ps.setDouble(2, Double.parseDouble(mPriceField.getText()));
+            ps.setInt(3, Integer.parseInt(mResIdField.getText()));
+            ps.setInt(4, Integer.parseInt(mIdField.getText()));
+            int rows = ps.executeUpdate();
+            if (rows > 0) { loadMenuItems(); clearMenuFields(); }
+            else showAlert("Warning", "Menu Item ID not found.");
+        }
     }
+
+    private void deleteMenuItem() throws SQLException {
+        String sql = "DELETE FROM MenuItem WHERE Id=?";
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, Integer.parseInt(mIdField.getText()));
+            int rows = ps.executeUpdate();
+            if (rows > 0) { loadMenuItems(); clearMenuFields(); }
+            else showAlert("Warning", "Menu Item ID not found.");
+        }
+    }
+
+    private void loadMenuItems() {
+        menuList.clear();
+        try (Connection con = DriverManager.getConnection(URL, USER, PASS);
+             Statement st = con.createStatement();
+             ResultSet rs = st.executeQuery("SELECT * FROM MenuItem")) {
+            while(rs.next()) {
+                menuList.add(new MenuItem(rs.getInt("Id"), rs.getString("Name"), rs.getDouble("Price"), rs.getInt("ResId")));
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+    }
+
+    private void clearMenuFields() { mIdField.clear(); mResIdField.clear(); mNameField.clear(); mPriceField.clear(); }
 
     private void showAlert(String title, String content) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
@@ -216,34 +340,37 @@ public class JavaFXApplication extends Application {
         alert.showAndWait();
     }
 
-    // ── Student Model Class ──────────────────────────────────────────────────
-    public static class Student {
-        private final IntegerProperty rollNo;
+    // ──────────────────────── DATA MODELS ────────────────────────
+    public static class Restaurant {
+        private final IntegerProperty id;
         private final StringProperty name;
-        private final StringProperty branch;
-        private final DoubleProperty marks;
-
-        public Student(int rollNo, String name, String branch, double marks) {
-            this.rollNo = new SimpleIntegerProperty(rollNo);
+        private final StringProperty address;
+        
+        public Restaurant(int id, String name, String address) {
+            this.id = new SimpleIntegerProperty(id);
             this.name = new SimpleStringProperty(name);
-            this.branch = new SimpleStringProperty(branch);
-            this.marks = new SimpleDoubleProperty(marks);
+            this.address = new SimpleStringProperty(address);
         }
+        public IntegerProperty idProperty() { return id; }
+        public StringProperty nameProperty() { return name; }
+        public StringProperty addressProperty() { return address; }
+    }
 
-        public IntegerProperty rollNoProperty() {
-            return rollNo;
+    public static class MenuItem {
+        private final IntegerProperty id;
+        private final StringProperty name;
+        private final DoubleProperty price;
+        private final IntegerProperty resId;
+        
+        public MenuItem(int id, String name, double price, int resId) {
+            this.id = new SimpleIntegerProperty(id);
+            this.name = new SimpleStringProperty(name);
+            this.price = new SimpleDoubleProperty(price);
+            this.resId = new SimpleIntegerProperty(resId);
         }
-
-        public StringProperty nameProperty() {
-            return name;
-        }
-
-        public StringProperty branchProperty() {
-            return branch;
-        }
-
-        public DoubleProperty marksProperty() {
-            return marks;
-        }
+        public IntegerProperty idProperty() { return id; }
+        public StringProperty nameProperty() { return name; }
+        public DoubleProperty priceProperty() { return price; }
+        public IntegerProperty resIdProperty() { return resId; }
     }
 }
