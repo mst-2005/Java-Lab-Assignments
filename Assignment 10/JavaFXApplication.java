@@ -17,7 +17,7 @@ public class JavaFXApplication extends Application {
     // Database constants
     static final String URL = "jdbc:mysql://localhost:3306/college_db?useSSL=false&serverTimezone=UTC";
     static final String USER = "root";
-    static final String PASS = "Mahu@2005";
+    static final String PASS = "Password";
 
     // UI Components
     private TextField rollField = new TextField();
